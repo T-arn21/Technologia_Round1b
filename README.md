@@ -115,12 +115,12 @@ The system will process all `.pdf` files in `/app/input` and generate correspond
 
 ## ⚙️ Constraints & Compliance
 
-| Constraint           | Compliance Status |
-|----------------------|------------------|
-| Execution Time ≤ 60s | ✅ (~35–45s for 5 PDFs) |
-| Model Size ≤ 1GB     | ✅ (~750MB total) |
-| CPU-only             | ✅ |
-| Offline Execution    | ✅ (no internet dependency) |
+| Constraint            | Compliance Status |
+|---------------------- |------------------|
+| Processing Time ≤ 60s | ✅ (~35–45s for 5 PDFs) |
+| Model Size ≤ 1GB      | ✅ (~750MB total) |
+| CPU-only              | ✅ |
+| Offline Execution     | ✅ (no internet dependency) |
 
 ---
 
@@ -133,40 +133,3 @@ The system will process all `.pdf` files in `/app/input` and generate correspond
 
 ---
 
-## 🏁 Future Improvements
-
-- Explore multilingual embedding models for better cross-language performance.
-- Introduce summarization (abstractive) within sub-section analysis.
-- Better handling of scanned image-heavy PDFs (currently sub-optimal).
-
----
-
-## 📁 Repo Structure
-
-```
-.
-├── app/
-│   ├── input/                  # PDF files to be processed
-│   ├── output/                 # Output JSONs
-│   ├── model_utils/            # Embedding + NLI loading scripts
-│   ├── layout_parser.py        # YOLOv10 + OCR logic
-│   ├── semantic_ranker.py      # MiniLM matching
-│   ├── contradiction_checker.py# NLI contradiction filter
-│   └── main.py                 # Entry script
-├── Dockerfile
-├── requirements.txt
-├── README.md
-└── approach_explanation.md
-```
-
----
-
-## 👤 Author
-
-Arnav Tiku – AI/ML Engineer | [GitHub](https://github.com/) | [LinkedIn](https://www.linkedin.com/)
-
----
-
-## 🧠 Final Thought
-
-> We're not just parsing PDFs — we're building the **bridge between static information and contextual understanding**.
