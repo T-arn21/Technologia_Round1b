@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "input_documents": [
+      "South of France - Cities.pdf",
+      "South of France - Cuisine.pdf",
+      "South of France - History.pdf",
+      "South of France - Restaurants and Hotels.pdf",
+      "South of France - Things to Do.pdf",
+      "South of France - Tips and Tricks.pdf",
+      "South of France - Traditions and Culture.pdf"
+    ],
+    "persona": {
+      "role": "Travel Planner"
+    },
+    "job_to_be_done": {
+      "task": "Plan a trip of 4 days for a group of 10 college friends."
+    },
+    "processing_timestamp": "2025-07-28T12:57:17.045274Z"
+  },
+  "extracted_sections": [
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 8,
+      "section_title": "Tipsand Tricks for Packing",
+      "importance_rank": 1
+    },
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 7,
+      "section_title": "Wine Tours",
+      "importance_rank": 2
+    },
+    {
+      "document": "South of France - Cities.pdf",
+      "page_number": 2,
+      "section_title": "Travel Tips",
+      "importance_rank": 3
+    },
+    {
+      "document": "South of France - Cities.pdf",
+      "page_number": 10,
+      "section_title": "Student Life",
+      "importance_rank": 4
+    },
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 2,
+      "section_title": "General Packing Tips and Tricks",
+      "importance_rank": 5
+    }
+  ],
+  "sub_section_analysis": [
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 8,
+      "refined_text": "Wear Bulky Items: Wear bulky items like coats or boots during travel to save suitcase space. Additional Tips: Pack a small travel umbrella, a reusable shopping bag, and a portable phone charger."
+    },
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 7,
+      "refined_text": "Wine Tours Comfortable Clothing: Wear comfortable, casual clothing suitable for walking and wine tasting."
+    },
+    {
+      "document": "South of France - Cities.pdf",
+      "page_number": 2,
+      "refined_text": "Travel Tips Best Time to Visit: The best time to visit the South of France is during the spring (April to June) and fall (September to October) when the weather is pleasant, and the tourist crowds are smaller. Transportation: The region is well-connected by an extensive network of trains, buses, and flights."
+    },
+    {
+      "document": "South of France - Cities.pdf",
+      "page_number": 10,
+      "refined_text": "Cultural Highlights Montpellier is renowned for its vibrant cultural scene, with numerous theaters, music venues, and festivals. Montpellier's cuisine is also notable, with local specialties such as tielle (a savory pie filled with octopus) and wines from the surrounding vineyards."
+    },
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 2,
+      "refined_text": "General Packing Tips and Tricks Layering: The weather can vary, so pack layers to stay comfortable in diﬀerent temperatures. Versatile Clothing: Choose items that can be mixed and matched to create multiple outfits, helping you pack lighter."
+    }
+  ]
+}
