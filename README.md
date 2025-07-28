@@ -1,3 +1,60 @@
+<<<<<<< HEAD
+# Adobe Hackathon Round 1B Submission
+
+This solution extracts and ranks relevant sections from PDFs based on a persona and job-to-be-done using a hybrid visual-semantic pipeline.
+
+## 🔍 Approach
+
+- **Layout Detection**: YOLOv10 detects key blocks (titles, headings, lists).
+- **Text Extraction**: EasyOCR extracts text from detected regions.
+- **Semantic Ranking**: MiniLM (SBERT) ranks sections by cosine similarity with the job description.
+- **Contradiction Guard**: NLI reranker penalizes sections that contradict the task.
+- **Summarization**: TF-IDF-based extractive summarization generates refined section insights.
+
+## ⚙️ Models Used
+
+| Model            | Path                                      | Size     |
+|------------------|-------------------------------------------|----------|
+| YOLOv10          | `models/doclayout_yolo_docstructbench_imgsz1024.pt` | ~30MB   |
+| MiniLM (SBERT)   | `models/all-MiniLM-L6-v2/`                | ~90MB    |
+| DeBERTa (NLI)    | `models/nli-deberta-v3-xsmall/`           | ~85MB    |
+
+✅ Total size < 1GB, CPU-compatible, and offline-capable.
+
+## 🛠 Build Instructions
+
+```bash
+docker build --platform linux/amd64 -t mysolution1b .
+```
+
+## ▶️ Run Instructions
+
+```bash
+docker run --rm \
+  -v $(pwd)/input:/app/input \
+  -v $(pwd)/output:/app/output \
+  mysolution1b /app/input
+```
+
+## 📁 Folder Structure
+
+```
+/app
+├── imple1anew.py
+├── Dockerfile
+├── requirements.txt
+├── models/
+│   ├── doclayout_yolo_docstructbench_imgsz1024.pt
+│   ├── all-MiniLM-L6-v2/
+│   └── nli-deberta-v3-xsmall/
+```
+
+## 🔒 Note
+
+- No API calls or network usage.
+- Fully CPU-only.
+- Repo must remain private until the final submission window ends.
+=======
 
 # 🧠 Task 1B – Persona-Driven Document Intelligence
 
@@ -133,3 +190,4 @@ The system will process all `.pdf` files in `/app/input` and generate correspond
 
 ---
 
+>>>>>>> 22b16f15d9c061085e1b1890b1d28cf4741243be

@@ -1,0 +1,13 @@
+torch
+sentence-transformers
+transformers
+easyocr
+opencv-python-headless
+PyMuPDF
+pillow
+scikit-learn
+numpy<2
+pandas
+psutil
+matplotlib
+py-cpuinfo
