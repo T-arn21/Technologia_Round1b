@@ -15,7 +15,7 @@ The system must:
 
 ## 🏗️ Approach Summary
 
-We extended our work from **Task 1A** by utilizing structured layout and OCR extraction. Then we introduced **semantic understanding**, **retrieval ranking**, and **NLI-based validation**.
+We extended our work from **Task 1A** by utilizing structured layout and OCR extraction. Then we introduced **semantic understanding**, **retrieval ranking**, and **NLI-based validation**. We also **extended our dataset** on a different field to test more results.
 
 ### 1. 🧾 Document Parsing
 
