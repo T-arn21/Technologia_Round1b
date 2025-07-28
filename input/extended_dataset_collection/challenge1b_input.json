@@ -1,0 +1,31 @@
+{
+    "challenge_info": {
+        "challenge_id": "round_1b_002",
+        "test_case_name": "gnn_drug_discovery",
+        "description": "Research papers on Graph Neural Networks for Drug Discovery"
+    },
+    "documents": [
+        {
+            "filename": "AcceleratingDrugDiscoverywithGraphNeuralNetworksandMolecularPropertyPrediction.pdf",
+            "title": "Accelerating Drug Discovery with Graph Neural Networks and Molecular Property Prediction"
+        },
+        {
+            "filename": "peerj-13163.pdf",
+            "title": "DeepNC: a framework for drug-target interaction prediction with graph neural networks"
+        },
+        {
+            "filename": "paper-5.pdf",
+            "title": "Explaining Graph Neural Network Predictions for Drug Repurposing"
+        },
+        {
+            "filename": "2302.08261v3.pdf",
+            "title": "Knowledge-augmented Graph Machine Learning for Drug Discovery: A Survey"
+        }
+    ],
+    "persona": {
+        "role": "PhD Researcher in Computational Biology"
+    },
+    "job_to_be_done": {
+        "task": "Prepare a comprehensive literature review focusing on methodologies, datasets, and performance benchmarks."
+    }
+}
