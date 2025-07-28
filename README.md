@@ -84,6 +84,14 @@ This significantly reduced runtime while improving relevance precision.
 
 ## 🛠️ How to Build and Run
 
+### 📦 Pre-setup
+
+Before building the image:
+
+- **Unzip** the provided `models.zip` and `.EasyOCR.zip` into the root directory.
+- Ensure the `models/` and `.EasyOCR/` folders are correctly placed for inference.
+
+
 ### 🐳 Build Docker Image
 
 ```bash
