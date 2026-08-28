@@ -19,7 +19,7 @@ We extended our work from **Task 1A** by utilizing structured layout and OCR ext
 
 ### 1. 🧾 Document Parsing
 
-We reused our Task 1A layout extractor:
+We reused our [Task 1A](https://github.com/T-arn21/Technologia_Round1a) layout extractor:
 - **YOLOv10**: For bounding box detection of text regions.
 - **EasyOCR**: For multilingual text extraction from the identified boxes.
 - Detected text was organized hierarchically using heading-level rules (H1/H2/H3).
