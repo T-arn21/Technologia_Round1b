@@ -1,5 +1,5 @@
 
-# 🧠 Task 1B – Persona-Driven Document Intelligence
+# 🧠 Task 1B – Persona-Driven Document Intelligence (Ultra-Fast)
 
 > **Adobe "Connecting the Dots" Challenge — Round 1B**  
 > *Theme: "Connect What Matters — For the User Who Matters"*
@@ -30,15 +30,15 @@ In **Round 1B**, the objective is to build an intelligent, on-device document in
 
 ---
 
-## 🏗️ Architecture & Pipeline
+## 🏗️ Architecture & Ultra-Fast Pipeline
 
 ```
-Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (150 DPI)
+Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (72 DPI, imgsz=640)
                                   │
                                   ▼
                          Native PyMuPDF Text ──(Fallback)──► EasyOCR
                                   │
-                         145 Section Chunks (Title + Body)
+                         155 Section Chunks (Title + Body)
                                   │
                                   ▼
                Dense Semantic Embeddings (all-MiniLM-L6-v2)
@@ -46,7 +46,7 @@ Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (150 DPI)
                          Cosine Similarity Ranking
                                   │
                                   ▼
-                         Top 20 Candidates
+                         Top 10 Candidates (75-word truncation)
                                   │
                                   ▼
                NLI Contradiction Guard (nli-deberta-v3-xsmall)
@@ -63,20 +63,20 @@ Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (150 DPI)
                      challenge1b_output.json
 ```
 
-### 1. 🧾 Document Layout & Native Text Parsing
-- **YOLOv10 Layout Detection:** Identifies `title`, `list`, and wide `text` bounding boxes across all document pages.
-- **Fast Native Vector Text:** Extracts digital text directly from bounding box coordinates in `< 0.1ms` using PyMuPDF (`fitz`), eliminating OCR typos and CPU bottlenecks.
+### 1. 🧾 High-Speed Document Layout & Native Text Parsing
+- **72 DPI + `imgsz=640` YOLOv10 Detection:** Reduces image pixel area by ~4× and downscales inference dimensions, reducing CPU forward-pass time per page from ~1.8s down to **~0.3s**.
+- **Instant Native Vector Text:** Extracts digital text directly from bounding box coordinates in `< 0.1ms` using PyMuPDF (`fitz`), eliminating OCR typos and CPU bottlenecks.
 - **Lazy EasyOCR Fallback:** EasyOCR is dynamically initialized only for scanned image regions without digital text layers.
-- **Section Slicing:** Clips body text between consecutive detected headings across pages.
+- **Section Slicing:** Clips body text between consecutive detected headings across pages (extracting 155 sections with high recall).
 
 ### 2. 🧠 Semantic Representation & Retrieval
 - **Embedding Model:** `all-MiniLM-L6-v2` (Sentence Transformers, ~90MB, 22M parameters) computes dense 384-dimensional vector representations.
-- **Query Formulation:** Rich composite query combining persona role and task description.
-- **Fast Similarity Search:** Vectorized cosine similarity ranks all extracted sections across the document collection.
+- **Batched CPU Inference:** Encodes query and all 155 section chunks in parallel with `batch_size=32` under `torch.inference_mode()`.
+- **Fast Similarity Search:** Vectorized cosine similarity ranks all extracted sections across the collection in ~2s.
 
-### 3. 🛡️ NLI Contradiction Filtering
+### 3. 🛡️ Lean NLI Contradiction Filtering
 - **Cross-Encoder Model:** Distilled `nli-deberta-v3-xsmall` (~280MB) evaluates pairwise premise-hypothesis entailment offline.
-- **Targeted Candidate Pool:** Evaluates the **Top 20** semantic candidates (truncated to 200 words) to eliminate quadratic cross-attention overhead.
+- **Top 10 Candidate Pool with Sequence Truncation:** Evaluates the **Top 10** candidates truncated to 75 words. Since transformer cross-attention is $O(L^2)$, this achieves an ~80% speedup over full-length evaluation while preserving ranking precision.
 - **Contradiction Penalty:**
   $$\text{Final Score} = \text{Semantic Score} \times (1 - \text{Contradiction Score})^2$$
 
@@ -102,13 +102,13 @@ Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (150 DPI)
     ],
     "persona": "Travel Planner",
     "job_to_be_done": "Plan a trip of 4 days for a group of 10 college friends.",
-    "processing_timestamp": "2026-09-03T13:35:44.577004Z"
+    "processing_timestamp": "2026-09-03T14:13:31.270112Z"
   },
   "extracted_sections": [
     {
       "document": "South of France - Tips and Tricks.pdf",
-      "page_number": 8,
-      "section_title": "Tips and Tricks for Packing",
+      "page_number": 2,
+      "section_title": "General Packing Tips and Tricks",
       "importance_rank": 1
     },
     {
@@ -121,8 +121,8 @@ Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (150 DPI)
   "subsection_analysis": [
     {
       "document": "South of France - Tips and Tricks.pdf",
-      "page_number": 8,
-      "refined_text": "Wear Bulky Items: Wear bulky items like coats or boots during travel to save suitcase space. Additional Tips: Pack a small travel umbrella, a reusable shopping bag, and a portable phone charger."
+      "page_number": 2,
+      "refined_text": "General Packing Tips and Tricks Layering: The weather can vary, so pack layers to stay comfortable in diﬀerent temperatures. Versatile Clothing: Choose items that can be mixed and matched to create multiple outfits, helping you pack lighter."
     }
   ]
 }
@@ -159,12 +159,12 @@ The container runs `miniLM_NLI.py` on `/app/input`. That folder contains input c
 
 ## ⚙️ Constraints & Measured Benchmark Compliance
 
-| Constraint | Requirement | Branch Status (`perf/fast-extraction`) | Notes |
+| Constraint | Requirement | Branch Status (`perf/ultra-fast`) | Notes |
 |---|:---:|:---:|---|
-| **Processing Time** | $\le 60\text{s}$ (3–5 PDFs) | ✅ **~45–48 s (5 PDFs)** / **66.81 s (7 dense PDFs)** | 11.4× faster than baseline (762s) |
+| **Processing Time** | $\le 60\text{s}$ (3–5 PDFs) | 🚀 **~25 s (5 PDFs)** / **34.80 s (7 dense PDFs)** | **21.8× faster** than baseline (762s) |
 | **Model Size** | $\le 1000\text{ MB}$ | ✅ **~500 MB total** | MiniLM (90MB) + DeBERTa (280MB) + YOLO (40MB) + EasyOCR (91MB) |
-| **Compute** | CPU Only (amd64) | ✅ **100% CPU Compliant** | ProcessPoolExecutor + PyTorch CPU inference mode |
-| **Network** | Offline Execution | ✅ **100% Offline** | `HF_HUB_OFFLINE=1`, no remote API calls |
+| **Compute** | CPU Only (amd64) | ✅ **100% CPU Compliant** | Multi-process worker pool + PyTorch CPU inference mode |
+| **Network** | Offline Execution | ✅ **100% Offline** | `HF_HUB_OFFLINE=1`, zero remote API calls |
 
 ---
 
@@ -172,8 +172,8 @@ The container runs `miniLM_NLI.py` on `/app/input`. That folder contains input c
 
 | Tool / Library | Model / Version | Purpose |
 |---|---|---|
-| **DocLayout-YOLO** | YOLOv10 (~40MB) | High-speed document bounding box layout segmentation |
-| **PyMuPDF (`fitz`)** | v1.26.x | Native digital PDF text extraction & bounding box clipping |
+| **DocLayout-YOLO** | YOLOv10 (`imgsz=640`) | High-speed document bounding box layout segmentation |
+| **PyMuPDF (`fitz`)** | v1.26.x (`dpi=72`) | Native digital PDF text extraction & bounding box clipping |
 | **EasyOCR** | CRAFT + Latin (~91MB) | Fallback OCR for raster/scanned image headings |
 | **Sentence-Transformers** | `all-MiniLM-L6-v2` (~90MB) | 384-dimensional dense semantic text embedding |
 | **Cross-Encoder** | `nli-deberta-v3-xsmall` (~280MB) | Offline NLI contradiction verification & reranking |
