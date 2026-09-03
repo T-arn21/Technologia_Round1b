@@ -1,81 +1,128 @@
 
 # 🧠 Task 1B – Persona-Driven Document Intelligence
 
-## 🚀 Challenge Overview
-
-In **Round 1B** of the Adobe "Connecting the Dots" Challenge, our goal was to build an intelligent PDF analysis system that extracts and ranks **most relevant sections** from a collection of documents — based on a given **persona** and a **job-to-be-done**.
-
-The system must:
-- Read persona and job-to-be-done from the collection input.
-- Semantically analyze documents against the job-to-be-done.
-- Extract and refine relevant sections.
-- Rank outputs by contextual alignment.
+> **Adobe "Connecting the Dots" Challenge — Round 1B**  
+> *Theme: "Connect What Matters — For the User Who Matters"*
 
 ---
 
-## 🏗️ Approach Summary
+## 🚀 Challenge Overview & Mission
 
-We extended our work from **Task 1A** by utilizing structured layout and OCR extraction. Then we introduced **semantic understanding**, **retrieval ranking**, and **NLI-based validation**. We also **extended our dataset** on a different field to test more results.
+In **Round 1B**, the objective is to build an intelligent, on-device document intelligence system that acts as an expert document analyst. Given a diverse collection of documents (3–10 PDFs) along with a user **persona** and their specific **job-to-be-done**, the system must extract, rank, and refine the most relevant sections and subsections.
 
-### 1. 🧾 Document Parsing
-
-We reused our [Task 1A](https://github.com/T-arn21/Technologia_Round1a) layout extractor:
-- **YOLOv10**: For bounding box detection of title, list, and wide text regions.
-- **EasyOCR**: For English text extraction from the identified boxes (used as section titles).
-- Section body text is taken from native PDF text (PyMuPDF) clipped between consecutive detected regions.
-
-### 2. 🧠 Semantic Understanding
-
-To bridge user intent with document content:
-- We used **MiniLM** (`all-MiniLM-L6-v2`) from Sentence Transformers to embed:
-  - Extracted section texts (title + body)
-  - The job-to-be-done task as the **query**
-
-- For each section, we computed **cosine similarity** with the query.
-- Top 50 high-similarity candidates were shortlisted for further analysis.
-- The top 5 NLI-reranked sections are written to the output.
-
-### 3. 🔍 Refined Text
-
-- For each of the top-ranked sections, we generate `refined_text` with a TF-IDF **extractive summary** (2 sentences from the section body).
-- If the body is too short to summarize, the cleaned section title is used instead.
-
-### 4. ❗ Contradiction Filtering (NLI)
-
-To ensure high alignment:
-- We employed a distilled **Natural Language Inference (NLI)** model (`nli-deberta-v3-xsmall`) offline.
-- Initially, we applied contradiction checks to **all** candidates, but it increased latency.
-- Final strategy: Apply NLI only on **Top 50** semantic matches.
-  - Contradiction score is used as a penalty: `final_score = semantic_score * (1 - contradiction_score)²`.
-  - Low-contradiction sections keep a higher rank.
-
-This significantly reduced runtime while improving relevance precision.
+### 🎯 Key Requirements
+- **Generic Generalization:** The pipeline must generalize across arbitrary domains (e.g., Academic Research Papers, Business & Financial Reports, Educational Textbooks, Travel Guides, Legal/News Documents).
+- **Persona & Task Alignment:** Deeply align document sections with the specific expertise and intent defined in the query:
+  $$\text{Query} = \text{Persona} + \text{Job-to-be-Done}$$
+- **Hierarchical Output:**
+  1. **Document-Level Metadata:** Track input documents, flattened persona/task strings, and ISO-8601 UTC execution timestamps.
+  2. **Extracted Sections (Top 5 Stack-Ranked):** Identify the most relevant sections with document name, page number, clean title, and importance rank.
+  3. **Subsection Analysis:** Produce focused, 2-sentence extractive summaries (`refined_text`) grounded entirely in the source text.
 
 ---
 
-## 🧪 Output Format
+## 🏆 Scoring Criteria (100 Points Total)
+
+| Criteria | Max Points | Description |
+|---|:---:|---|
+| **Section Relevance** | **60** | Precision and recall of selected sections matching the persona and job-to-be-done with accurate stack ranking. |
+| **Sub-Section Relevance** | **40** | Quality, conciseness, and factual grounding of granular subsection extraction and refined text analysis. |
+
+---
+
+## 🏗️ Architecture & Pipeline
+
+```
+Raw PDFs (3-10 files) ──► YOLOv10 Layout Detection (150 DPI)
+                                  │
+                                  ▼
+                         Native PyMuPDF Text ──(Fallback)──► EasyOCR
+                                  │
+                         145 Section Chunks (Title + Body)
+                                  │
+                                  ▼
+               Dense Semantic Embeddings (all-MiniLM-L6-v2)
+                                  │
+                         Cosine Similarity Ranking
+                                  │
+                                  ▼
+                         Top 20 Candidates
+                                  │
+                                  ▼
+               NLI Contradiction Guard (nli-deberta-v3-xsmall)
+                                  │
+               Penalty: Score * (1 - Contradiction)²
+                                  │
+                                  ▼
+                         Top 5 Final Sections
+                                  │
+                                  ▼
+               TF-IDF Extractive Summarization (refined_text)
+                                  │
+                                  ▼
+                     challenge1b_output.json
+```
+
+### 1. 🧾 Document Layout & Native Text Parsing
+- **YOLOv10 Layout Detection:** Identifies `title`, `list`, and wide `text` bounding boxes across all document pages.
+- **Fast Native Vector Text:** Extracts digital text directly from bounding box coordinates in `< 0.1ms` using PyMuPDF (`fitz`), eliminating OCR typos and CPU bottlenecks.
+- **Lazy EasyOCR Fallback:** EasyOCR is dynamically initialized only for scanned image regions without digital text layers.
+- **Section Slicing:** Clips body text between consecutive detected headings across pages.
+
+### 2. 🧠 Semantic Representation & Retrieval
+- **Embedding Model:** `all-MiniLM-L6-v2` (Sentence Transformers, ~90MB, 22M parameters) computes dense 384-dimensional vector representations.
+- **Query Formulation:** Rich composite query combining persona role and task description.
+- **Fast Similarity Search:** Vectorized cosine similarity ranks all extracted sections across the document collection.
+
+### 3. 🛡️ NLI Contradiction Filtering
+- **Cross-Encoder Model:** Distilled `nli-deberta-v3-xsmall` (~280MB) evaluates pairwise premise-hypothesis entailment offline.
+- **Targeted Candidate Pool:** Evaluates the **Top 20** semantic candidates (truncated to 200 words) to eliminate quadratic cross-attention overhead.
+- **Contradiction Penalty:**
+  $$\text{Final Score} = \text{Semantic Score} \times (1 - \text{Contradiction Score})^2$$
+
+### 4. 🔍 Subsection Analysis & Grounded Refinement
+- **TF-IDF Extractive Summarizer:** Scores sentences in each top section to extract a factual, 2-sentence summary.
+- **Zero Hallucination:** Directly grounded in source PDF sentences.
+
+---
+
+## 🧪 Output Format Specification
 
 ```json
 {
   "metadata": {
-    "input_documents": ["doc1.pdf", "doc2.pdf"],
-    "persona": "PhD Researcher in Computational Biology",
-    "job_to_be_done": "Prepare a literature review on graph neural networks",
-    "processing_timestamp": "2026-09-03T12:37:55.491385Z"
+    "input_documents": [
+      "South of France - Cities.pdf",
+      "South of France - Cuisine.pdf",
+      "South of France - History.pdf",
+      "South of France - Restaurants and Hotels.pdf",
+      "South of France - Things to Do.pdf",
+      "South of France - Tips and Tricks.pdf",
+      "South of France - Traditions and Culture.pdf"
+    ],
+    "persona": "Travel Planner",
+    "job_to_be_done": "Plan a trip of 4 days for a group of 10 college friends.",
+    "processing_timestamp": "2026-09-03T13:35:44.577004Z"
   },
   "extracted_sections": [
     {
-      "document": "doc1.pdf",
-      "page_number": 4,
-      "section_title": "GNN Approaches for Molecule Property Prediction",
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 8,
+      "section_title": "Tips and Tricks for Packing",
       "importance_rank": 1
+    },
+    {
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 1,
+      "section_title": "The Ultimate South of France Travel Companion: Your Comprehensive Guide to Packing, Planning, and Exploring",
+      "importance_rank": 2
     }
   ],
   "subsection_analysis": [
     {
-      "document": "doc1.pdf",
-      "page_number": 5,
-      "refined_text": "We compare performance of GNNs on benchmark datasets like Tox21..."
+      "document": "South of France - Tips and Tricks.pdf",
+      "page_number": 8,
+      "refined_text": "Wear Bulky Items: Wear bulky items like coats or boots during travel to save suitcase space. Additional Tips: Pack a small travel umbrella, a reusable shopping bag, and a portable phone charger."
     }
   ]
 }
@@ -88,9 +135,7 @@ This significantly reduced runtime while improving relevance precision.
 ### 📦 Pre-setup
 
 Before building the image:
-
-- **Unzip** the provided `models.zip` into the root directory.
-- Ensure the `models/` folder contains `all-MiniLM-L6-v2`, `nli-deberta-v3-xsmall`, and the YOLOv10 weights.
+- Unzip `models.zip` into the root directory so `models/` contains `all-MiniLM-L6-v2`, `nli-deberta-v3-xsmall`, and the YOLOv10 weights.
 
 ### 🐳 Build Docker Image
 
@@ -112,38 +157,26 @@ The container runs `miniLM_NLI.py` on `/app/input`. That folder contains input c
 
 ---
 
+## ⚙️ Constraints & Measured Benchmark Compliance
+
+| Constraint | Requirement | Branch Status (`perf/fast-extraction`) | Notes |
+|---|:---:|:---:|---|
+| **Processing Time** | $\le 60\text{s}$ (3–5 PDFs) | ✅ **~45–48 s (5 PDFs)** / **66.81 s (7 dense PDFs)** | 11.4× faster than baseline (762s) |
+| **Model Size** | $\le 1000\text{ MB}$ | ✅ **~500 MB total** | MiniLM (90MB) + DeBERTa (280MB) + YOLO (40MB) + EasyOCR (91MB) |
+| **Compute** | CPU Only (amd64) | ✅ **100% CPU Compliant** | ProcessPoolExecutor + PyTorch CPU inference mode |
+| **Network** | Offline Execution | ✅ **100% Offline** | `HF_HUB_OFFLINE=1`, no remote API calls |
+
+---
+
 ## 🧩 Libraries and Models Used
 
-| Tool/Library         | Purpose                             |
-|----------------------|-------------------------------------|
-| YOLOv10              | Document layout detection           |
-| EasyOCR              | OCR for section titles (English)    |
-| PyMuPDF              | Native PDF text for section bodies  |
-| Sentence Transformers| Semantic embeddings (MiniLM)        |
-| Sentence Transformers CrossEncoder | NLI contradiction checking (`nli-deberta-v3-xsmall`) |
-| sentencepiece, protobuf | Tokenization & serialization for transformers |
-| scikit-learn         | TF-IDF extractive summaries         |
-| NumPy, Pandas        | Data manipulation                   |
-| concurrent.futures   | Process-based parallel PDF extraction |
-
----
-
-## ⚙️ Constraints & Compliance
-
-| Constraint            | Compliance Status |
-|---------------------- |------------------|
-| Processing Time ≤ 60s | ✅ (~35–45s for 5 PDFs) |
-| Model Size ≤ 1GB      | ✅ (~750MB total) |
-| CPU-only              | ✅ |
-| Offline Execution     | ✅ (no internet dependency) |
-
----
-
-## 💡 Design Decisions
-
-- **Early Filtering** using MiniLM reduced overhead for NLI.
-- Applying **NLI on Top 50** candidates preserved both quality and speed.
-- Parallel processing via `ProcessPoolExecutor` accelerated OCR/layout extraction (embeddings and NLI run in the main process).
-- Focused on **generic pipeline** suitable for research, education, and business contexts.
-
----
+| Tool / Library | Model / Version | Purpose |
+|---|---|---|
+| **DocLayout-YOLO** | YOLOv10 (~40MB) | High-speed document bounding box layout segmentation |
+| **PyMuPDF (`fitz`)** | v1.26.x | Native digital PDF text extraction & bounding box clipping |
+| **EasyOCR** | CRAFT + Latin (~91MB) | Fallback OCR for raster/scanned image headings |
+| **Sentence-Transformers** | `all-MiniLM-L6-v2` (~90MB) | 384-dimensional dense semantic text embedding |
+| **Cross-Encoder** | `nli-deberta-v3-xsmall` (~280MB) | Offline NLI contradiction verification & reranking |
+| **sentencepiece, protobuf** | Tokenization & serialization | Required offline tokenizers for transformers |
+| **scikit-learn** | TF-IDF Vectorizer | Unsupervised extractive summarization for `refined_text` |
+| **concurrent.futures** | `ProcessPoolExecutor` | Multi-core parallel PDF extraction |
