@@ -107,8 +107,6 @@ def extract_sections_from_pdf(pdf_path):
 
     if worker_yolo_model is None:
         worker_yolo_model = YOLOv10(YOLO_MODEL_PATH)
-    if worker_ocr_reader is None:
-        worker_ocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
 
     doc = fitz.open(pdf_path)
     all_headings = []
@@ -116,7 +114,8 @@ def extract_sections_from_pdf(pdf_path):
 
     for i, page in enumerate(doc):
         page_num = i + 1
-        pix = page.get_pixmap(dpi=200)
+        page_width, page_height = page.rect.width, page.rect.height
+        pix = page.get_pixmap(dpi=150)
         img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width, pix.n)
         if img_np.shape[2] == 4:
@@ -129,17 +128,29 @@ def extract_sections_from_pdf(pdf_path):
             label = class_names[int(box.cls)]
             if label in ["title", "list"] or (label == "text" and (box.xyxy[0][2] - box.xyxy[0][0]) > 100):
                 x1, y1, x2, y2 = [int(coord) for coord in box.xyxy[0]]
-                cropped_img = img_np[y1:y2, x1:x2]
-                if cropped_img.size > 0:
-                    ocr_result = worker_ocr_reader.readtext(
-                        cropped_img, detail=0, paragraph=True)
-                    if ocr_result and len(" ".join(ocr_result).split()) > 1:
-                        text = " ".join(ocr_result).strip()
-                        page_width, page_height = page.rect.width, page.rect.height
-                        abs_bbox = ((x1/pix.width)*page_width, (y1/pix.height)*page_height,
-                                    (x2/pix.width)*page_width, (y2/pix.height)*page_height)
-                        all_headings.append(
-                            {"text": text, "page": page_num, "y_coord": abs_bbox[1], "bbox": abs_bbox})
+                abs_bbox = ((x1/pix.width)*page_width, (y1/pix.height)*page_height,
+                            (x2/pix.width)*page_width, (y2/pix.height)*page_height)
+                
+                # Fast path: extract native digital text from bounding box
+                rect = fitz.Rect(abs_bbox)
+                text = page.get_text("text", clip=rect).strip() if rect.is_valid else ""
+                text = clean_text(text)
+
+                # Fallback to EasyOCR if native text is empty or missing
+                if not text or len(text.split()) < 1:
+                    cropped_img = img_np[y1:y2, x1:x2]
+                    if cropped_img.size > 0:
+                        if worker_ocr_reader is None:
+                            worker_ocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                        ocr_result = worker_ocr_reader.readtext(
+                            cropped_img, detail=0, paragraph=True)
+                        if ocr_result:
+                            text = clean_text(" ".join(ocr_result))
+
+                if text and len(text.split()) >= 1:
+                    all_headings.append(
+                        {"text": text, "page": page_num, "y_coord": abs_bbox[1], "bbox": abs_bbox})
+
     if not all_headings:
         doc.close()
         return []
@@ -231,33 +242,40 @@ def run_persona_analysis(collection_path, output_filename):
     nli_model = CrossEncoder(NLI_MODEL_PATH)
     print("✅ Models loaded successfully.")
 
-    print("🔍 Computing semantic similarity embeddings...")
-    query_embedding = sbert_model.encode(query_text, convert_to_tensor=True)
-    section_embeddings = sbert_model.encode(
-        [sec['full_text'] for sec in all_sections])
-    semantic_scores = util.cos_sim(query_embedding, section_embeddings)[0]
+    with torch.inference_mode():
+        print("🔍 Computing semantic similarity embeddings...")
+        query_embedding = sbert_model.encode(
+            query_text, convert_to_tensor=True, show_progress_bar=False)
+        section_embeddings = sbert_model.encode(
+            [sec['full_text'] for sec in all_sections], batch_size=32, show_progress_bar=False)
+        semantic_scores = util.cos_sim(query_embedding, section_embeddings)[0]
 
-    for i, section in enumerate(all_sections):
-        section['semantic_score'] = semantic_scores[i].item()
+        for i, section in enumerate(all_sections):
+            section['semantic_score'] = semantic_scores[i].item()
 
-    pre_ranked_sections = sorted(
-        all_sections, key=lambda x: x['semantic_score'], reverse=True)
+        pre_ranked_sections = sorted(
+            all_sections, key=lambda x: x['semantic_score'], reverse=True)
 
-    nli_candidates = pre_ranked_sections[:50]
+        nli_candidates = pre_ranked_sections[:20]
 
-    if nli_candidates:
-        print(f"🛡️ Running NLI contradiction guard on top {len(nli_candidates)} candidates...")
-        nli_pairs = [[query_text, section['full_text']]
-                     for section in nli_candidates]
-        nli_scores = nli_model.predict(
-            nli_pairs, batch_size=16, activation_fn=torch.nn.Softmax(dim=-1), show_progress_bar=False)
+        if nli_candidates:
+            print(f"🛡️ Running NLI contradiction guard on top {len(nli_candidates)} candidates...")
+            
+            def _truncate_text(text, max_words=200):
+                words = text.split()
+                return text if len(words) <= max_words else " ".join(words[:max_words])
 
-        for i, section in enumerate(nli_candidates):
-            contradiction_score = float(nli_scores[i][0])
-            original_score = section['semantic_score']
-            final_score = original_score * ((1 - contradiction_score) ** 2)
-            section['final_score'] = final_score
-            section['contradiction_score'] = contradiction_score
+            nli_pairs = [[query_text, _truncate_text(section['full_text'], 200)]
+                         for section in nli_candidates]
+            nli_scores = nli_model.predict(
+                nli_pairs, batch_size=20, activation_fn=torch.nn.Softmax(dim=-1), show_progress_bar=False)
+
+            for i, section in enumerate(nli_candidates):
+                contradiction_score = float(nli_scores[i][0])
+                original_score = section['semantic_score']
+                final_score = original_score * ((1 - contradiction_score) ** 2)
+                section['final_score'] = final_score
+                section['contradiction_score'] = contradiction_score
 
     final_ranked_sections = sorted(
         nli_candidates, key=lambda x: x.get('final_score', 0), reverse=True)
