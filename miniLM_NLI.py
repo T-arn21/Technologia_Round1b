@@ -7,38 +7,90 @@ import os
 import json
 import torch
 import re
-import fitz  # PyMuPDF
 import numpy as np
+import pymupdf as fitz
+
 import pandas as pd
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import traceback
 import cv2
 
-# --- Add project root to sys.path for module imports ---
-# Note: You may need to adjust this path based on your exact folder structure.
-# This assumes the script is in a subfolder like '1b' and the project root is two levels up.
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(PROJECT_ROOT)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
 
-# --- ML/DL Imports ---
 
-# --- Constants ---
-MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
+def _first_existing_dir(candidates):
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return candidates[0]
+
+
+MODELS_DIR = _first_existing_dir([
+    os.path.join(SCRIPT_DIR, "models"),
+    "/models",
+])
 YOLO_MODEL_PATH = os.path.join(
     MODELS_DIR, "doclayout_yolo_docstructbench_imgsz1024.pt")
-SBERT_MODEL_PATH = os.path.join(MODELS_DIR, 'all-MiniLM-L6-v2')
-NLI_MODEL_PATH = os.path.join(MODELS_DIR, 'nli-deberta-v3-xsmall')
-OUTPUT_DIR_BASE = os.path.join(PROJECT_ROOT, "1b_outputs4")
+SBERT_MODEL_PATH = os.path.join(MODELS_DIR, "all-MiniLM-L6-v2")
+NLI_MODEL_PATH = os.path.join(MODELS_DIR, "nli-deberta-v3-xsmall")
+OUTPUT_DIR_BASE = "/app/output" if os.path.isdir("/app/output") else os.path.join(
+    SCRIPT_DIR, "output")
 
-# --- Global variables for worker processes ---
-# These will be initialized once per worker process to avoid serialization errors.
 worker_yolo_model = None
 worker_ocr_reader = None
 
-# --- Main Functions ---
+
+def flatten_persona_or_job(value, nested_key):
+    if isinstance(value, dict):
+        if nested_key in value:
+            return value.get(nested_key, "") or ""
+        return next(iter(value.values()), "") if value else ""
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def find_collections(root_path):
+    json_name = "challenge1b_input.json"
+    if os.path.isfile(os.path.join(root_path, json_name)):
+        return [root_path]
+    collections = []
+    for name in sorted(os.listdir(root_path)):
+        child = os.path.join(root_path, name)
+        if os.path.isdir(child) and os.path.isfile(os.path.join(child, json_name)):
+            collections.append(child)
+    return collections
+
+
+def find_pdf_files(collection_path, input_data):
+    for folder in ("PDFs", "Pdfs", "pdfs"):
+        path = os.path.join(collection_path, folder)
+        if os.path.isdir(path):
+            return sorted(
+                os.path.join(path, f)
+                for f in os.listdir(path)
+                if f.lower().endswith(".pdf")
+            )
+    files = []
+    for doc in input_data.get("documents") or []:
+        filename = doc.get("filename") if isinstance(doc, dict) else doc
+        if not filename:
+            continue
+        candidate = os.path.join(collection_path, filename)
+        if os.path.isfile(candidate):
+            files.append(candidate)
+    if files:
+        return files
+    return sorted(
+        os.path.join(collection_path, f)
+        for f in os.listdir(collection_path)
+        if f.lower().endswith(".pdf")
+    )
 
 
 def clean_text(text):
@@ -53,12 +105,9 @@ def extract_sections_from_pdf(pdf_path):
     """Worker function: Extracts sections from a single PDF. Models are loaded here."""
     global worker_yolo_model, worker_ocr_reader
 
-    # Lazy Initialization: Load models if they haven't been loaded in this specific process yet
     if worker_yolo_model is None:
-        # print(f"Process {os.getpid()}: Initializing YOLOv10 model...")
         worker_yolo_model = YOLOv10(YOLO_MODEL_PATH)
     if worker_ocr_reader is None:
-        # print(f"Process {os.getpid()}: Initializing EasyOCR reader...")
         worker_ocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
 
     doc = fitz.open(pdf_path)
@@ -136,7 +185,7 @@ def extractive_summary(text, num_sentences=2):
         return text
 
 
-def run_persona_analysis(collection_path):
+def run_persona_analysis(collection_path, output_filename):
     """Main pipeline with multiprocessing for PDF extraction."""
     start_time = time.perf_counter()
 
@@ -146,24 +195,19 @@ def run_persona_analysis(collection_path):
 
     persona, job_to_be_done = input_data.get(
         'persona', {}), input_data.get('job_to_be_done', {})
-    job_text = job_to_be_done if isinstance(
-        job_to_be_done, str) else job_to_be_done.get('task', '')
+    persona_str = flatten_persona_or_job(persona, "role")
+    job_str = flatten_persona_or_job(job_to_be_done, "task")
+    query_text = f"{persona_str}. {job_str}".strip(" .")
 
-    print("🧠 Loading SBERT and NLI models in main process...")
-    sbert_model = SentenceTransformer(SBERT_MODEL_PATH)
-    nli_model = CrossEncoder(NLI_MODEL_PATH)
-    print("✅ Main models loaded.")
+    pdf_files = find_pdf_files(collection_path, input_data)
+    if not pdf_files:
+        print("\n❌ No PDFs found. Cannot continue.")
+        return
 
+    print(f"📄 Extracting layout & text from {len(pdf_files)} PDF(s) in parallel...")
+    num_workers = min(4, os.cpu_count() or 1)
     all_sections = []
-    pdf_folder_path = os.path.join(collection_path, "Pdfs")
-    pdf_files = [os.path.join(pdf_folder_path, f) for f in os.listdir(
-        pdf_folder_path) if f.lower().endswith('.pdf')]
-
-    # print(f"🚀 Starting parallel PDF processing for {len(pdf_files)} files...")
-    # Using 'max_workers=2' as it was found to be optimal for a 16GB RAM system.
-    # Adjust this value based on your system's available CPU cores and RAM.
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        # Submit the worker function without the model arguments
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
         future_to_pdf = {executor.submit(
             extract_sections_from_pdf, pdf): pdf for pdf in pdf_files}
         for future in as_completed(future_to_pdf):
@@ -171,7 +215,7 @@ def run_persona_analysis(collection_path):
             try:
                 if results := future.result():
                     all_sections.extend(results)
-                    # print(f"✅ Finished processing: {os.path.basename(pdf_path)}")
+                    print(f"   ✓ Extracted {len(results)} sections from {os.path.basename(pdf_path)}")
             except Exception:
                 print(
                     f"❌ Critical error processing {os.path.basename(pdf_path)}:")
@@ -181,8 +225,14 @@ def run_persona_analysis(collection_path):
         print("\n❌ No sections could be extracted. Cannot continue.")
         return
 
-    # print(f"\n🔍 Stage 1: Calculating semantic scores for {len(all_sections)} sections...")
-    query_embedding = sbert_model.encode(job_text, convert_to_tensor=True)
+    print(f"📊 Total sections extracted across collection: {len(all_sections)}")
+    print("🧠 Loading SBERT and NLI models for ranking...")
+    sbert_model = SentenceTransformer(SBERT_MODEL_PATH)
+    nli_model = CrossEncoder(NLI_MODEL_PATH)
+    print("✅ Models loaded successfully.")
+
+    print("🔍 Computing semantic similarity embeddings...")
+    query_embedding = sbert_model.encode(query_text, convert_to_tensor=True)
     section_embeddings = sbert_model.encode(
         [sec['full_text'] for sec in all_sections])
     semantic_scores = util.cos_sim(query_embedding, section_embeddings)[0]
@@ -195,16 +245,15 @@ def run_persona_analysis(collection_path):
 
     nli_candidates = pre_ranked_sections[:50]
 
-    # print(f"\n🧐 Stage 2: Applying NLI contradiction guard to top {len(nli_candidates)} candidates...")
     if nli_candidates:
-        nli_pairs = [[job_text, section['full_text']]
+        print(f"🛡️ Running NLI contradiction guard on top {len(nli_candidates)} candidates...")
+        nli_pairs = [[query_text, section['full_text']]
                      for section in nli_candidates]
-        # New Code
         nli_scores = nli_model.predict(
-            nli_pairs, activation_fn=torch.nn.Softmax(dim=-1))
+            nli_pairs, batch_size=16, activation_fn=torch.nn.Softmax(dim=-1), show_progress_bar=False)
 
         for i, section in enumerate(nli_candidates):
-            contradiction_score = nli_scores[i][0]
+            contradiction_score = float(nli_scores[i][0])
             original_score = section['semantic_score']
             final_score = original_score * ((1 - contradiction_score) ** 2)
             section['final_score'] = final_score
@@ -213,10 +262,17 @@ def run_persona_analysis(collection_path):
     final_ranked_sections = sorted(
         nli_candidates, key=lambda x: x.get('final_score', 0), reverse=True)
 
-    output_json = {"metadata": {"input_documents": [os.path.basename(p) for p in pdf_files], "persona": persona, "job_to_be_done": job_to_be_done, "processing_timestamp": datetime.utcnow(
-    ).isoformat() + "Z"}, "extracted_sections": [], "sub_section_analysis": []}
+    output_json = {
+        "metadata": {
+            "input_documents": [os.path.basename(p) for p in pdf_files],
+            "persona": persona_str,
+            "job_to_be_done": job_str,
+            "processing_timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+        "extracted_sections": [],
+        "subsection_analysis": [],
+    }
 
-    # print("\n📝 Generating final output...")
     top_n = min(5, len(final_ranked_sections))
     for i, section in enumerate(final_ranked_sections[:top_n]):
         output_json["extracted_sections"].append(
@@ -230,12 +286,10 @@ def run_persona_analysis(collection_path):
         if not cleaned_summary:
             cleaned_summary = clean_text(section['section_title'])
 
-        output_json["sub_section_analysis"].append(
+        output_json["subsection_analysis"].append(
             {"document": section['doc_name'], "page_number": section['page_number'], "refined_text": cleaned_summary})
 
-    os.makedirs(OUTPUT_DIR_BASE, exist_ok=True)
-    output_filename = os.path.join(
-        OUTPUT_DIR_BASE, f"{os.path.basename(collection_path)}_output.json")
+    os.makedirs(os.path.dirname(output_filename) or ".", exist_ok=True)
     with open(output_filename, 'w', encoding='utf-8') as f:
         json.dump(output_json, f, indent=2, ensure_ascii=False)
 
@@ -253,4 +307,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not os.path.isdir(args.collection_path):
         sys.exit(f"❌ Error: Path not found '{args.collection_path}'")
-    run_persona_analysis(args.collection_path)
+    collections = find_collections(args.collection_path)
+    if not collections:
+        sys.exit(
+            f"❌ Error: No challenge1b_input.json under '{args.collection_path}'")
+    os.makedirs(OUTPUT_DIR_BASE, exist_ok=True)
+    if len(collections) == 1:
+        output_path = os.path.join(OUTPUT_DIR_BASE, "challenge1b_output.json")
+        run_persona_analysis(collections[0], output_path)
+    else:
+        for collection in collections:
+            output_path = os.path.join(
+                OUTPUT_DIR_BASE, f"{os.path.basename(collection)}.json")
+            run_persona_analysis(collection, output_path)

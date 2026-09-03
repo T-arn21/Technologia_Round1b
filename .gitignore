@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+models/
+.EasyOCR/
+
+output/
+1b_outputs4/
+
+.cursor/
+/*.pdf
+
+.DS_Store
+Thumbs.db

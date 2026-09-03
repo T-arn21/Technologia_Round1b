@@ -1,6 +1,9 @@
 torch
 sentence-transformers
 transformers
+sentencepiece
+protobuf
+doclayout-yolo
 easyocr
 opencv-python-headless
 PyMuPDF
