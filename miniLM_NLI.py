@@ -115,7 +115,7 @@ def extract_sections_from_pdf(pdf_path):
     for i, page in enumerate(doc):
         page_num = i + 1
         page_width, page_height = page.rect.width, page.rect.height
-        pix = page.get_pixmap(dpi=150)
+        pix = page.get_pixmap(dpi=72)
         img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width, pix.n)
         if img_np.shape[2] == 4:
@@ -123,7 +123,7 @@ def extract_sections_from_pdf(pdf_path):
         elif img_np.shape[2] == 1:
             img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2RGB)
 
-        results = worker_yolo_model.predict(img_np, conf=0.3, verbose=False)
+        results = worker_yolo_model.predict(img_np, conf=0.3, imgsz=640, verbose=False)
         for box in results[0].boxes:
             label = class_names[int(box.cls)]
             if label in ["title", "list"] or (label == "text" and (box.xyxy[0][2] - box.xyxy[0][0]) > 100):
@@ -256,19 +256,19 @@ def run_persona_analysis(collection_path, output_filename):
         pre_ranked_sections = sorted(
             all_sections, key=lambda x: x['semantic_score'], reverse=True)
 
-        nli_candidates = pre_ranked_sections[:20]
+        nli_candidates = pre_ranked_sections[:10]
 
         if nli_candidates:
             print(f"🛡️ Running NLI contradiction guard on top {len(nli_candidates)} candidates...")
             
-            def _truncate_text(text, max_words=200):
+            def _truncate_text(text, max_words=75):
                 words = text.split()
                 return text if len(words) <= max_words else " ".join(words[:max_words])
 
-            nli_pairs = [[query_text, _truncate_text(section['full_text'], 200)]
+            nli_pairs = [[query_text, _truncate_text(section['full_text'], 75)]
                          for section in nli_candidates]
             nli_scores = nli_model.predict(
-                nli_pairs, batch_size=20, activation_fn=torch.nn.Softmax(dim=-1), show_progress_bar=False)
+                nli_pairs, batch_size=10, activation_fn=torch.nn.Softmax(dim=-1), show_progress_bar=False)
 
             for i, section in enumerate(nli_candidates):
                 contradiction_score = float(nli_scores[i][0])
