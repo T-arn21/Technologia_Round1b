@@ -12,6 +12,7 @@ output/
 
 .cursor/
 /*.pdf
+doclayout_yolo/
 
 .DS_Store
 Thumbs.db
